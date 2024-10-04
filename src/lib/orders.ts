@@ -11,6 +11,7 @@ import {
 } from "../helpers/errors";
 import { fetchAndHandleErrors } from "../helpers/fetch";
 import { getApiUrl } from "../helpers/urls";
+import { confirm } from "@inquirer/prompts";
 
 const usdFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -274,9 +275,11 @@ export function registerOrders(program: Command) {
     });
 
   ordersCommand
-    .command("cancel <id>")
-    .description("Cancel an order")
-    .action(submitOrderCancellationByIdAction);
+    .command("cancel [id]")
+    .description("Cancel an order or all open orders")
+    .option("-a, --all", "Cancel all open orders")
+    .option("-f, --force", "Skip confirmation prompt when cancelling all orders")
+    .action(cancelOrderAction);
 }
 
 export async function getOrders(props: {
@@ -346,23 +349,80 @@ export async function getOrders(props: {
   return resp.data;
 }
 
-export async function submitOrderCancellationByIdAction(
-  orderId: string,
-): Promise<never> {
+async function cancelOrderAction(id: string | undefined, options: { all?: boolean, force?: boolean }) {
+  if (options.all) {
+    await cancelAllOpenOrdersAction(options);
+  } else if (id) {
+    await submitOrderCancellationById(id);
+  } else {
+    console.log("Please provide an order ID or use the --all flag to cancel all open orders.");
+    process.exit(1);
+  }
+}
+
+async function cancelAllOpenOrdersAction(options: { force?: boolean }) {
   const loggedIn = await isLoggedIn();
   if (!loggedIn) {
     logLoginMessageAndQuit();
   }
 
+  // Confirm cancellation unless force option is used
+  if (!options.force) {
+    const shouldProceed = await confirm({
+      message: "Are you sure you want to cancel all open orders?",
+      default: false,
+    });
+
+    if (!shouldProceed) {
+      console.log("Operation cancelled.");
+      process.exit(0);
+    }
+  }
+
+  const url = await getApiUrl("orders_cancel_all");
+  
+  try {
+    const response = await fetchAndHandleErrors(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${await getAuthToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        return await logSessionTokenExpiredAndQuit();
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("All open orders have been cancelled successfully.");
+    console.log(data);
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(`Failed to cancel all orders: ${error.message}`);
+    } else {
+      console.error("An unknown error occurred while cancelling all orders");
+    }
+    process.exit(1);
+  }
+
+  process.exit(0);
+}
+
+async function submitOrderCancellationById(orderId: string): Promise<void> {
   const url = await getApiUrl("orders_cancel", { id: orderId });
   const response = await fetchAndHandleErrors(url, {
     method: "DELETE",
     body: JSON.stringify({}),
     headers: {
-      "Content-ype": "application/json",
+      "Content-Type": "application/json",
       Authorization: `Bearer ${await getAuthToken()}`,
     },
   });
+
   if (!response.ok) {
     if (response.status === 401) {
       return await logSessionTokenExpiredAndQuit();
@@ -385,8 +445,4 @@ export async function submitOrderCancellationByIdAction(
   if (!cancellationSubmitted) {
     return logAndQuit(`Failed to cancel order ${orderId}`);
   }
-
-  // cancellation submitted successfully
-  console.log(`Cancellation for Order ${orderId} submitted.`);
-  process.exit(0);
 }

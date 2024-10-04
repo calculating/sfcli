@@ -41,6 +41,7 @@ interface SfBuyOptions {
   start?: string;
   yes?: boolean;
   quote?: boolean;
+  split?: boolean;
 }
 
 export function registerBuy(program: Command) {
@@ -57,6 +58,7 @@ export function registerBuy(program: Command) {
     )
     .option("-y, --yes", "Automatically confirm the order")
     .option("--quote", "Only provide a quote for the order")
+    .option("--split", "Split the order into multiple smaller orders")
     .action(buyOrderAction);
 }
 
@@ -69,6 +71,7 @@ async function buyOrderAction(options: SfBuyOptions) {
   // normalize inputs
 
   const isQuoteOnly = options.quote ?? false;
+  const isSplit = options.split ?? false;
 
   // parse duration
   let durationSeconds = parseDuration(options.duration, "s");
@@ -96,17 +99,6 @@ async function buyOrderAction(options: SfBuyOptions) {
       return logAndQuit(`Invalid price: ${options.price}`);
     }
     priceCents = priceCentsParsed;
-  }
-
-  // Convert the price to the total price of the contract
-  // (price per gpu hour * gpus per node * quantity * duration in hours)
-  if (priceCents) {
-    priceCents = pricePerGPUHourToTotalPriceCents(
-      priceCents,
-      durationSeconds,
-      quantity,
-      GPUS_PER_NODE,
-    );
   }
 
   const yesFlagOmitted = options.yes === undefined || options.yes === null;
@@ -161,7 +153,11 @@ async function buyOrderAction(options: SfBuyOptions) {
     );
 
     console.log(
-      `Found availability from ${c.green(quote.start_at)} to ${c.green(quote.end_at)} (${c.green(formatDuration(durationSeconds * 1000))}) at ${priceLabelUsd} total (${priceLabelPerGPUHour}/GPU-hour)`,
+      `Found availability from ${c.green(quote.start_at)} to ${c.green(
+        quote.end_at,
+      )} (${c.green(
+        formatDuration(durationSeconds * 1000),
+      )}) at ${priceLabelUsd} total (${priceLabelPerGPUHour}/GPU-hour)`,
     );
     didQuote = true;
   } else if (!priceCents) {
@@ -191,10 +187,121 @@ async function buyOrderAction(options: SfBuyOptions) {
   }
 
   if (!durationSeconds) {
-    throw new Error("unexpectly no duration provided");
+    throw new Error("unexpectedly no duration provided");
   }
   if (!priceCents) {
-    throw new Error("unexpectly no price provided");
+    throw new Error("unexpectedly no price provided");
+  }
+
+  // Handle --split option
+  if (isSplit) {
+    // Check that start date is specified
+    if (!options.start) {
+      return logAndQuit(
+        "--split option requires a start date to be specified using --start",
+      );
+    }
+
+    // Check that duration is an integer number of hours
+    if (durationSeconds % 3600 !== 0) {
+      return logAndQuit(
+        "--split option requires duration to be an integer number of hours",
+      );
+    }
+
+    // Check that price is specified
+    if (!priceCents) {
+      return logAndQuit("--split option requires price to be specified using --price");
+    }
+
+    const M = quantity; // number of nodes
+    const N = durationSeconds / 3600; // number of hours
+
+    const pricePerGPUHourCents = priceCents
+    const totalPriceCents = pricePerGPUHourCents * GPUS_PER_NODE * M * N
+    
+    // Compute price per order
+    const pricePerOrderCents = pricePerGPUHourCents * GPUS_PER_NODE * 1; // 1 hour
+
+    if (confirmWithUser) {
+      const confirmationMessage = confirmPlaceSplitOrderMessage({
+        instanceType: options.type,
+        priceCents: totalPriceCents,
+        quantity,
+        durationSeconds,
+        startsAt: startDate,
+        endsAt: endDate,
+        M,
+        N,
+        pricePerGPUHourCents,
+      });
+      const confirmed = await confirm({
+        message: confirmationMessage,
+        default: false,
+      });
+
+      if (!confirmed) {
+        return logAndQuit("Order cancelled");
+      }
+    }
+
+    // Collect all promises
+    const orderPromises = [];
+
+    for (let hourIndex = 0; hourIndex < N; hourIndex++) {
+      const orderStartDate = dayjs(startDate === "NOW" ? new Date() : startDate)
+        .add(hourIndex, "hour")
+        .toDate();
+      const orderEndDate = dayjs(orderStartDate).add(1, "hour").toDate();
+
+      for (let nodeIndex = 0; nodeIndex < M; nodeIndex++) {
+        // Place the order
+        const orderPromise = placeBuyOrder({
+          instanceType: options.type,
+          priceCents: pricePerOrderCents,
+          quantity: 1,
+          startsAt: orderStartDate,
+          endsAt: orderEndDate,
+          confirmWithUser: false,
+          quoteOnly: isQuoteOnly,
+        }).then((res) =>
+          waitForOrderToNotBePending(res.id, { consoleLog: false }),
+        );
+
+        orderPromises.push(orderPromise);
+      }
+    }
+
+    // Wait for all orders to be placed
+    console.log(`Placing ${orderPromises.length} orders...`);
+
+    const orders = await Promise.all(orderPromises);
+
+    // Process the orders
+    const filledOrders = orders.filter((order) => order.status === "filled");
+    const openOrders = orders.filter((order) => order.status === "open");
+
+    if (filledOrders.length > 0) {
+      console.log(
+        `Successfully placed and filled ${filledOrders.length} orders.`,
+      );
+    }
+
+    if (openOrders.length > 0) {
+      console.log(
+        `${openOrders.length} orders are still open. You can check their status with:
+
+    sf orders ls
+
+If you want to cancel the orders, you can do so with:
+
+    sf orders cancel [order_id]
+
+        `,
+      );
+    }
+
+    return;
   }
 
   // if we didn't quote, we need to round the start and end dates
@@ -274,7 +381,9 @@ async function buyOrderAction(options: SfBuyOptions) {
     } else {
       const contractStartTime = dayjs(startAt);
       const timeFromNow = contractStartTime.fromNow();
-      console.log(`Your contract begins ${c.green(timeFromNow)}. You can view more details using:
+      console.log(`Your contract begins ${c.green(
+        timeFromNow,
+      )}. You can view more details using:
 
   sf contracts ls
 
@@ -284,7 +393,7 @@ async function buyOrderAction(options: SfBuyOptions) {
   }
 
   if (order.status === "open") {
-    console.log(`Your order wasn't accepted yet. You can check it's status with:
+    console.log(`Your order wasn't accepted yet. You can check its status with:
 
         sf orders ls
   
@@ -313,9 +422,7 @@ function confirmPlaceOrderMessage(options: BuyOptions) {
   const nodesLabel = options.quantity > 1 ? "nodes" : "node";
 
   const durationHumanReadable = formatDuration(options.durationSeconds * 1000);
-  const endsAtLabel = c.green(
-    dayjs(options.endsAt).format("MM/DD/YYYY hh:mm A"),
-  );
+  const endsAtLabel = c.green(dayjs(options.endsAt).format("MM/DD/YYYY hh:mm A"));
   const fromNowTime = dayjs(
     options.startsAt === "NOW" ? new Date() : options.startsAt,
   ).fromNow();
@@ -332,7 +439,9 @@ function confirmPlaceOrderMessage(options: BuyOptions) {
         ? "NOW"
         : dayjs(options.startsAt).format("MM/DD/YYYY hh:mm A"),
     );
-    timeDescription = `from ${startAtLabel} (${c.green(fromNowTime)}) until ${endsAtLabel}`;
+    timeDescription = `from ${startAtLabel} (${c.green(
+      fromNowTime,
+    )}) until ${endsAtLabel}`;
   }
 
   const pricePerGPUHour = totalPriceToPricePerGPUHour(
@@ -344,7 +453,11 @@ function confirmPlaceOrderMessage(options: BuyOptions) {
   const pricePerHourLabel = c.green(centsToDollarsFormatted(pricePerGPUHour));
   const totalPriceLabel = c.green(centsToDollarsFormatted(options.priceCents));
 
-  const topLine = `${totalNodesLabel} ${instanceTypeLabel} ${nodesLabel} (${GPUS_PER_NODE * options.quantity} GPUs) at ${pricePerHourLabel} per GPU hour for ${c.green(durationHumanReadable)} ${timeDescription} for a total of ${totalPriceLabel}`;
+  const topLine = `${totalNodesLabel} ${instanceTypeLabel} ${nodesLabel} (${
+    GPUS_PER_NODE * options.quantity
+  } GPUs) at ${pricePerHourLabel} per GPU hour for ${c.green(
+    durationHumanReadable,
+  )} ${timeDescription} for a total of ${totalPriceLabel}`;
 
   const dollarsLabel = c.green(centsToDollarsFormatted(pricePerGPUHour));
 
@@ -353,6 +466,33 @@ function confirmPlaceOrderMessage(options: BuyOptions) {
   const priceLine = `\nBuy ${gpusLabel} GPUs at ${dollarsLabel} per GPU hour?`;
 
   return `${topLine}\n${priceLine} `;
+}
+
+function confirmPlaceSplitOrderMessage(options: BuySplitOptions) {
+  const totalOrders = options.M * options.N;
+  const totalNodesLabel = c.green(options.M);
+  const totalHoursLabel = c.green(options.N);
+  const totalOrdersLabel = c.green(totalOrders);
+  const instanceTypeLabel = c.green(options.instanceType);
+  const nodesLabel = options.M > 1 ? "nodes" : "node";
+  const durationHumanReadable = formatDuration(options.durationSeconds * 1000);
+
+  const startsAtLabel = c.green(
+    options.startsAt === "NOW"
+      ? "NOW"
+      : dayjs(options.startsAt).format("MM/DD/YYYY hh:mm A"),
+  );
+
+  const endsAtLabel = c.green(dayjs(options.endsAt).format("MM/DD/YYYY hh:mm A"));
+
+  const pricePerGPUHourLabel = c.green(
+    centsToDollarsFormatted(options.pricePerGPUHourCents),
+  );
+  const totalPriceLabel = c.green(centsToDollarsFormatted(options.priceCents));
+
+  const message = `You are about to place ${totalOrdersLabel} orders, each for 1 ${instanceTypeLabel} node (${GPUS_PER_NODE} GPUs) for 1 hour, starting from ${startsAtLabel}, at ${pricePerGPUHourLabel} per GPU-hour, totaling ${totalPriceLabel}.\nDo you want to proceed?`;
+
+  return message;
 }
 
 type BuyOptions = {
@@ -365,16 +505,26 @@ type BuyOptions = {
   confirmWithUser: boolean;
   quoteOnly: boolean;
 };
-export async function placeBuyOrder(
-  options: Omit<BuyOptions, "durationSeconds">,
-) {
+
+type BuySplitOptions = {
+  instanceType: string;
+  priceCents: number;
+  quantity: number;
+  durationSeconds: number;
+  startsAt: Date | "NOW";
+  endsAt: Date;
+  M: number;
+  N: number;
+  pricePerGPUHourCents: number;
+};
+
+export async function placeBuyOrder(options: Omit<BuyOptions, "durationSeconds">) {
   const api = await apiClient();
   const { data, error, response } = await api.POST("/v0/orders", {
     body: {
       side: "buy",
       instance_type: options.instanceType,
       quantity: options.quantity,
-      // round start date again because the user might take a long time to confirm
       start_at:
         options.startsAt === "NOW"
           ? "NOW"
@@ -423,9 +573,13 @@ export async function getQuote(options: QuoteOptions) {
         quantity: options.quantity,
         duration: options.durationSeconds,
         min_start_date:
-          options.startsAt === "NOW" ? "NOW" : options.startsAt.toISOString(),
+          options.startsAt === "NOW"
+            ? "NOW"
+            : options.startsAt.toISOString(),
         max_start_date:
-          options.startsAt === "NOW" ? "NOW" : options.startsAt.toISOString(),
+          options.startsAt === "NOW"
+            ? "NOW"
+            : options.startsAt.toISOString(),
       },
     },
   });
@@ -450,29 +604,4 @@ export async function getQuote(options: QuoteOptions) {
   }
 
   return data.quote;
-}
-
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function getOrder(orderId: string) {
-  const api = await apiClient();
-
-  const { data: order } = await api.GET("/v0/orders/{id}", {
-    params: { path: { id: orderId } },
-  });
-  return order;
-}
-
-async function tryToGetOrder(orderId: string) {
-  for (let i = 0; i < 10; i++) {
-    const order = await getOrder(orderId);
-    if (order) {
-      return order;
-    }
-    await sleep(50);
-  }
-
-  return undefined;
 }

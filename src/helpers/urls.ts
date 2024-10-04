@@ -15,6 +15,7 @@ const apiPaths = {
   orders_list: "/v0/orders",
   orders_get: ({ id }: { id: string }) => `/v0/orders/${id}`,
   orders_cancel: ({ id }: { id: string }) => `/v0/orders/${id}`,
+  orders_cancel_all: "/v0/orders/cancel-all",
 
   quote_get: "/v0/quote",
 
