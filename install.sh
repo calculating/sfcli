@@ -1,8 +1,7 @@
 #!/usr/bin/env sh
 
-# Define the GitHub repository, branch name, and the name of the binary.
+# Define the GitHub repository and the name of the binary.
 GITHUB_REPO="calculating/sfcli"
-BRANCH_NAME="galens_version"
 BINARY_NAME="sif"
 
 # Check the operating system
@@ -84,11 +83,6 @@ else
     SF_BINARY_URL=$github_repo/releases/download/$VERSION/sf-$target.zip
 fi
 
-# If no specific version is provided, use the branch name
-if [ -z "$VERSION" ]; then
-    SF_BINARY_URL=$github_repo/raw/$BRANCH_NAME/sf-$target.zip
-fi
-
 # Check if the download URL was found.
 if [ -z "${SF_BINARY_URL}" ]; then
     echo "Failed to find the download URL for the '${BINARY_NAME}' binary."
@@ -107,7 +101,7 @@ unzip -o "${TMPDIR}/${BINARY_NAME}.zip" -d "${TMPDIR}/dist" ||
     { echo "Failed to extract sf"; exit 1; }
 
 # Move the binary to the target directory.
-mv -T "${TMPDIR}/dist/sf-$target" "${TARGET_FILE}"
+mv "${TMPDIR}/dist/sf-$target" "${TARGET_FILE}"
 
 # Make the downloaded binary executable.
 chmod +x "${TARGET_FILE}"
@@ -147,7 +141,7 @@ if [ -f "${TARGET_FILE}" ]; then
     printf "\033[0;32m\\n"
     printf "After running the appropriate command, you can use '%s'.\033[0m\\n" "${BINARY_NAME}"
     printf "\033[0;32m\\n"
-    printf "To get started, run: 'sf login'\033[0m\\n"
+    printf "To get started, run: '${BINARY_NAME} login'\033[0m\\n"
     printf "\033[0;32m\\n"
 
 else
