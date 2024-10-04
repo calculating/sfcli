@@ -28,7 +28,7 @@ import {
 import { waitForOrderToNotBePending } from "../helpers/waitingForOrder";
 import type { Nullable } from "../types/empty";
 import { GPUS_PER_NODE } from "./constants";
-import { formatDuration } from "./orders";
+import { formatDuration, getOrders } from "./orders";
 
 dayjs.extend(relativeTime);
 dayjs.extend(duration);
@@ -46,7 +46,7 @@ interface SfBuyOptions {
 
 export function registerBuy(program: Command) {
   program
-    .command("buy")
+    .command("buy [orderId]")
     .description("Place a buy order")
     .requiredOption("-t, --type <type>", "Specify the type of node", "h100i")
     .option("-n, --accelerators <quantity>", "Specify the number of GPUs", "8")
@@ -59,13 +59,24 @@ export function registerBuy(program: Command) {
     .option("-y, --yes", "Automatically confirm the order")
     .option("--quote", "Only provide a quote for the order")
     .option("--split", "Split the order into multiple smaller orders")
-    .action(buyOrderAction);
+    .action((orderId: string | undefined, options: SfBuyOptions) => {
+      if (orderId) {
+        buyOrderAction(orderId);
+      } else {
+        buyOrderAction(options);
+      }
+    });
+
 }
 
-async function buyOrderAction(options: SfBuyOptions) {
+async function buyOrderAction(options: SfBuyOptions | string) {
   const loggedIn = await isLoggedIn();
   if (!loggedIn) {
     return logLoginMessageAndQuit();
+  }
+
+  if (typeof options === 'string') {
+    return await matchSellOrder(options);
   }
 
   // normalize inputs
@@ -219,9 +230,8 @@ async function buyOrderAction(options: SfBuyOptions) {
 
     const pricePerGPUHourCents = priceCents
     const totalPriceCents = pricePerGPUHourCents * GPUS_PER_NODE * M * N
-    
-    // Compute price per order
-    const pricePerOrderCents = pricePerGPUHourCents * GPUS_PER_NODE * 1; // 1 hour
+
+    const pricePerOrderCents = pricePerGPUHourCents * GPUS_PER_NODE * 1;
 
     if (confirmWithUser) {
       const confirmationMessage = confirmPlaceSplitOrderMessage({
@@ -265,7 +275,7 @@ async function buyOrderAction(options: SfBuyOptions) {
           confirmWithUser: false,
           quoteOnly: isQuoteOnly,
         }).then((res) =>
-          waitForOrderToNotBePending(res.id, { consoleLog: false }),
+          waitForOrderToNotBePending(res.id, false),
         );
 
         orderPromises.push(orderPromise);
@@ -410,6 +420,87 @@ If you want to cancel the orders, you can do so with:
       sf orders ls
 
     `);
+}
+
+async function matchSellOrder(orderId: string) {
+  // Fetch all public orders
+  const publicOrders = await getOrders({
+    include_public: true,
+    side: "sell",
+  });
+
+  // Find the matching sell order
+  const matchingOrder = publicOrders.find((order) => order.id === orderId);
+
+  if (!matchingOrder) {
+    return logAndQuit(`Order not found: ${orderId}`);
+  }
+
+  if (matchingOrder.side !== "sell") {
+    return logAndQuit(`Order ${orderId} is not a sell order`);
+  }
+
+  const startDate = new Date(matchingOrder.start_at);
+  const endDate = new Date(matchingOrder.end_at);
+  const durationSeconds = (endDate.getTime() - startDate.getTime()) / 1000;
+  const durationHours = durationSeconds / 3600;
+
+  const priceCents =
+    matchingOrder.price * durationHours * matchingOrder.quantity;
+
+  const buyOptions: BuyOptions = {
+    instanceType: matchingOrder.instance_type,
+    priceCents: priceCents,
+    quantity: matchingOrder.quantity,
+    startsAt: startDate,
+    endsAt: endDate,
+    durationSeconds: durationSeconds,
+    confirmWithUser: true,
+    quoteOnly: false,
+  };
+
+  // Confirm with the user
+  const confirmationMessage = confirmPlaceOrderMessage(buyOptions);
+  const confirmed = await confirm({
+    message: confirmationMessage,
+    default: false,
+  });
+
+  if (!confirmed) {
+    return logAndQuit("Order cancelled");
+  }
+
+  // Place the buy order
+  const result = await placeBuyOrder(buyOptions);
+
+  const matchedOrder = await waitForOrderToNotBePending(result.id);
+  if (!matchedOrder) {
+    return;
+  }
+
+  if (matchedOrder.status === "filled") {
+    console.log(`Your order has been filled. You can view your instances using:
+
+  sf instances ls
+
+`);
+  } else if (matchedOrder.status === "open") {
+    console.log(`Your order is open. You can check its status with:
+
+  sf orders ls
+
+If you want to cancel the order, you can do so with:
+
+  sf orders cancel ${matchedOrder.id}
+
+`);
+  } else {
+    console.error(`Order likely did not execute. Check the status with:
+
+  sf orders ls
+
+`);
+  }
 }
 
 function confirmPlaceOrderMessage(options: BuyOptions) {
