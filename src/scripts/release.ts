@@ -121,11 +121,11 @@ async function createRelease(version: string) {
   }
   console.log(`✅ Committed with message "release: v${version}"`);
 
-  const gitPushResult = await asyncSpawn(["git", "push", "origin", "main"]);
+  const gitPushResult = await asyncSpawn(["git", "push", "origin", "galens_version"]);
   if (gitPushResult.exitCode !== 0) {
-    logAndError("Failed to push to origin main");
+    logAndError("Failed to push to origin galens_version");
   }
-  console.log("✅ Pushed to origin main");
+  console.log("✅ Pushed to origin galens_version");
 }
 
 async function cleanDist() {
