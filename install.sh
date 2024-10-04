@@ -1,8 +1,9 @@
 #!/usr/bin/env sh
 
-# Define the GitHub repository and the name of the binary.
-GITHUB_REPO="sfcompute/cli"
-BINARY_NAME="sf"
+# Define the GitHub repository, branch name, and the name of the binary.
+GITHUB_REPO="calculating/sfcli"
+BRANCH_NAME="galens_version"
+BINARY_NAME="sif"
 
 # Check the operating system
 OS="$(uname -s)"
@@ -81,6 +82,11 @@ if [ $# -eq 0 ]; then
 else
     VERSION=$1
     SF_BINARY_URL=$github_repo/releases/download/$VERSION/sf-$target.zip
+fi
+
+# If no specific version is provided, use the branch name
+if [ -z "$VERSION" ]; then
+    SF_BINARY_URL=$github_repo/raw/$BRANCH_NAME/sf-$target.zip
 fi
 
 # Check if the download URL was found.
