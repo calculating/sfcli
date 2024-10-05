@@ -14,6 +14,7 @@ import { registerSSH } from "./lib/ssh";
 import { registerTokens } from "./lib/tokens";
 import { registerDown, registerUp } from "./lib/updown";
 import { registerUpgrade } from "./lib/upgrade";
+import { registerView } from "./lib/view";
 
 const program = new Command();
 
@@ -35,7 +36,7 @@ registerTokens(program);
 registerUpgrade(program);
 registerUp(program);
 registerDown(program);
-
+registerView(program);
 // (development commands)
 registerDev(program);
 

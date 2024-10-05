@@ -13,14 +13,14 @@ import {
 dayjs.extend(relativeTime);
 dayjs.extend(duration);
 
-export function registerMarket(program: Command) {
-  const marketCommand = program
-    .command("market")
-    .description("Display market overview");
+export function registerView(program: Command) {
+  const viewCommand = program
+    .command("view")
+    .description("Display view");
 
-  marketCommand
+  viewCommand
     .command("overview")
-    .description("Display market overview")
+    .description("Display view overview")
     .option(
       "--max-future <hours>",
       "Maximum number of hours into the future to display",
