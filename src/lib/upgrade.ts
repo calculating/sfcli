@@ -17,9 +17,9 @@ export function registerUpgrade(program: Command) {
       }
 
       if (version) {
-        await Bun.$`bash -c "$(curl -fsSL http://143.110.237.14/cli/install)" -- ${version}`;
+        await Bun.$`bash -c "$(curl -fsSL https://si.ml/cli/install)" -- ${version}`;
       } else {
-        await Bun.$`bash -c "$(curl -fsSL http://143.110.237.14/cli/install)"`;
+        await Bun.$`bash -c "$(curl -fsSL https://si.ml/cli/install)"`;
       }
 
       process.exit(0);
