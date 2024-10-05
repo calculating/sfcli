@@ -116,7 +116,7 @@ if [ -f "${TARGET_FILE}" ]; then
 
     # Provide instructions for adding the target directory to the PATH.
     printf "\033[0;32m\\n"
-    printf "\033[1m  Welcome to SandardIntelligenceFranciso"
+    printf "\033[1m  Welcome to SandardIntelligenceFranciso\\n"
     printf "\033[0;32m\\n"
     printf "To use the '%s' command, add '%s' to your PATH.\\n" "${BINARY_NAME}" "${TARGET_DIR_UNEXPANDED}"
     printf "\033[0;32m\\n"
