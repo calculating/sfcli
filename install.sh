@@ -116,30 +116,11 @@ if [ -f "${TARGET_FILE}" ]; then
 
     # Provide instructions for adding the target directory to the PATH.
     printf "\033[0;32m\\n"
+    printf "\033[1m  Welcome to SandardIntelligenceFranciso"
+    printf "\033[0;32m\\n"
     printf "To use the '%s' command, add '%s' to your PATH.\\n" "${BINARY_NAME}" "${TARGET_DIR_UNEXPANDED}"
-    printf "You can do this by running one of the following commands, depending on your shell\\n"
-    printf "\033[0m\\n"
-    printf "\033[0;32mFor sh:\\n"
-    printf "\033[1m  echo 'export PATH=\"%s:\$PATH\"' >> ~/.profile && source ~/.profile\033[0m\\n" "${TARGET_DIR_UNEXPANDED}"
     printf "\033[0;32m\\n"
-    # For bash the "proper" answer is to only modify the .profile and then as
-    # the login shell, or the desktop environment (such as the X session, or
-    # Wayland session) is supposed to load the .profile, but as many desktop
-    # environments such as xfce4 don't do this properly (and it sounds as though
-    # almost no Wayland environments handle it properly) unless the user edits
-    # their .xsessionrc the practical solution (that other installers such as
-    # rustup also use) is to set both .profile, and .bashrc.
-    #
-    # One could probably only edit .bashrc if they wanted as most distributions
-    # have ~/.profile (or ~/.bash_profile) also load .bashrc if the shell is
-    # bash.
-    printf "\033[0;32mFor bash:\\n"
-    printf "\033[1m  echo 'export PATH=\"%s:\$PATH\"' >> ~/.profile && echo 'export PATH=\"%s:\$PATH\"' >> ~/.bashrc && source ~/.profile\033[0m\\n" "${TARGET_DIR_UNEXPANDED}" "${TARGET_DIR_UNEXPANDED}"
-    printf "\033[0;32m\\n"
-    printf "\033[0;32mFor zsh:\\n"
-    printf "\033[1m  echo 'export PATH=\"%s:\$PATH\"' >> ~/.zshrc && source ~/.zshrc\033[0m\\n" "${TARGET_DIR_UNEXPANDED}"
-    printf "\033[0;32m\\n"
-    printf "After running the appropriate command, you can use '%s'.\033[0m\\n" "${BINARY_NAME}"
+    printf "Then you can use '%s'.\033[0m\\n" "${BINARY_NAME}"
     printf "\033[0;32m\\n"
     printf "To get started, run: '${BINARY_NAME} login'\033[0m\\n"
     printf "\033[0;32m\\n"
