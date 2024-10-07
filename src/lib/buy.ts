@@ -330,7 +330,9 @@ If you want to cancel the orders, you can do so with:
     );
 
     const priceCentsPerSecond = priceCents / durationSeconds;
-    const roundedPriceCents = priceCentsPerSecond * roundedDurationSeconds;
+    const roundedPriceCents = Math.ceil(
+      priceCentsPerSecond * roundedDurationSeconds,
+    );
 
     priceCents = roundedPriceCents;
     startDate = roundedStartDate;
