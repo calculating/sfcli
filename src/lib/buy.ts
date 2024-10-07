@@ -456,8 +456,7 @@ async function matchSellOrder(orderId: string) {
   const durationSeconds = (endDate.getTime() - startDate.getTime()) / 1000;
   const durationHours = durationSeconds / 3600;
 
-  const priceCents =
-    matchingOrder.price * durationHours * matchingOrder.quantity;
+  const priceCents = matchingOrder.price
 
   const buyOptions: BuyOptions = {
     instanceType: matchingOrder.instance_type,
