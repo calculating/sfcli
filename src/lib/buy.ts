@@ -112,6 +112,15 @@ async function buyOrderAction(options: SfBuyOptions | string) {
     priceCents = priceCentsParsed;
   }
 
+  if (!isSplit && priceCents) {
+    priceCents = pricePerGPUHourToTotalPriceCents(
+      priceCents,
+      durationSeconds,
+      quantity,
+      GPUS_PER_NODE,
+    );
+  }
+
   const yesFlagOmitted = options.yes === undefined || options.yes === null;
   const confirmWithUser = yesFlagOmitted || !options.yes;
 
