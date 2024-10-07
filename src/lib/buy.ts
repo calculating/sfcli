@@ -631,7 +631,7 @@ export async function placeBuyOrder(options: Omit<BuyOptions, "durationSeconds">
           ? "NOW"
           : roundStartDate(options.startsAt).toISOString(),
       end_at: options.endsAt.toISOString(),
-      price: options.priceCents,
+      price: Math.round(options.priceCents),
     },
   });
 
